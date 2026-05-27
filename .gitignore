@@ -1,6 +1,48 @@
+# --- Build / CMake ---
 build/
+out/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+Makefile
+compile_commands.json
+CMakeUserPresets.json
+_deps/
+
+# --- IDE ---
 .vs/
+.vscode/
 *.user
 *.suo
-CMakeUserPresets.json
-out/
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb
+
+# --- Compiled binaries & debug ---
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.obj
+*.lib
+*.exp
+D3DCompiler_47.dll
+
+# --- ImGui (local window layout) ---
+imgui.ini
+
+# --- Large environment & model assets (keep README only under assets/) ---
+glb/
+hdrs/
+*.hdr
+*.exr
+*.glb
+*.gltf
+assets/*
+!assets/README.md
+
+# --- Optional local dependency trees (use system / FetchContent / DAWN_INSTALL_PREFIX) ---
+dawn/
+glm/
