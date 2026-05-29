@@ -11,8 +11,8 @@ GGX prefilter mips + split-sum BRDF LUT, then runtime PBR shading in WebGPU
 - CMake 3.22+
 - Visual Studio 2022 (MSVC toolchain)
 - Dawn installed (default expected path: `C:/libs/dawn/install/Release`)
-- One HDR environment file (`.hdr`)
-- Optional glTF model (`.glb`)
+- One HDR environment map (`.hdr`) — not included in the repo; download locally (e.g. [Poly Haven](https://polyhaven.com/hdris))
+- Optional glTF model (`.glb`) — not included in the repo; place under `glb/` if you want a hero mesh
 
 ## Build
 
@@ -34,7 +34,7 @@ cd build/Release
 .\Renderer.exe path\to\environment.hdr [path\to\model.glb]
 ```
 
-If model path is omitted, the app attempts `glb/porsche.glb`.
+The second argument is optional. If you omit it, the app looks for `glb/porsche.glb` or `../glb/porsche.glb` **only if that file exists on your machine** (it is gitignored and not shipped with the repo). If no model is found, the scene uses the built-in debug PBR spheres only — that is enough to build and run the IBL pipeline.
 
 ## Controls
 
