@@ -1,8 +1,11 @@
 #include "ibl/IblBaker.h"
 
 #include <array>
+#include <chrono>
 #include <iostream>
 #include <string>
+
+#include "utils/QueueSync.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -110,6 +113,20 @@ struct BrdfUniforms {
   float padding1 = 0.0f;
   float padding2 = 0.0f;
 };
+
+double ElapsedMs(const std::chrono::steady_clock::time_point& start) {
+  const auto end = std::chrono::steady_clock::now();
+  return std::chrono::duration<double, std::milli>(end - start).count();
+}
+
+void SyncIfTiming(const wgpu::Instance* syncInstance,
+                  const wgpu::Queue& queue,
+                  IblBakeTimings* timingsOut) {
+  if (timingsOut && syncInstance) {
+    utils::WaitForQueue(*syncInstance, queue);
+    syncInstance->ProcessEvents();
+  }
+}
 
 // Generate mip levels for the environment cubemap by downsampling each face.
 // This is the explicit replacement for generateMipmap (which doesn't exist in WebGPU).
@@ -309,7 +326,8 @@ IblTextures BakeDiffuseIrradiance(const wgpu::Device& device,
                                   const wgpu::Queue& queue,
                                   const io::HdrTexture& hdr,
                                   const IblBakeSettings& settings,
-                                  IblBakeTimings* timingsOut) {
+                                  IblBakeTimings* timingsOut,
+                                  const wgpu::Instance* syncInstance) {
   IblTextures result{};
   result.bakedSettings = settings;
   const uint32_t envMipCount = EnvMipLevelCount(settings.envFaceSize);
@@ -433,11 +451,16 @@ IblTextures BakeDiffuseIrradiance(const wgpu::Device& device,
   const glm::mat4 projection = MakeCaptureProjection();
   const auto views = BuildCaptureViews();
 
+  const auto tEquirectStart = std::chrono::steady_clock::now();
   for (uint32_t face = 0; face < 6; ++face) {
     CaptureUniforms uniforms{};
     uniforms.viewProj = projection * views[face];
     DrawCubemapFace(device, queue, equirectPipeline, equirectBindGroup, captureUbo, uniforms,
                     result.envCubemap, face, 0);
+  }
+  SyncIfTiming(syncInstance, queue, timingsOut);
+  if (timingsOut) {
+    timingsOut->equirectMs = ElapsedMs(tEquirectStart);
   }
 
   // Step 4: build the diffuse irradiance cubemap (32x32, 6 faces).
@@ -556,14 +579,18 @@ IblTextures BakeDiffuseIrradiance(const wgpu::Device& device,
 
   wgpu::RenderPipeline irradiancePipeline = device.CreateRenderPipeline(&irrPipelineDesc);
 
+  const auto tIrradianceStart = std::chrono::steady_clock::now();
   for (uint32_t face = 0; face < 6; ++face) {
     CaptureUniforms uniforms{};
     uniforms.viewProj = projection * views[face];
     DrawCubemapFace(device, queue, irradiancePipeline, irradianceBindGroup, captureUbo, uniforms,
                     result.irradianceCubemap, face, 0);
   }
+  SyncIfTiming(syncInstance, queue, timingsOut);
+  if (timingsOut) {
+    timingsOut->irradianceMs = ElapsedMs(tIrradianceStart);
+  }
 
-  (void)timingsOut;
   return result;
 }
 
@@ -571,8 +598,8 @@ void BakeSpecularPrefilter(const wgpu::Device& device,
                            const wgpu::Queue& queue,
                            IblTextures& textures,
                            const IblBakeSettings& settings,
-                           IblBakeTimings* timingsOut) {
-  (void)timingsOut;
+                           IblBakeTimings* timingsOut,
+                           const wgpu::Instance* syncInstance) {
   textures.bakedSettings = settings;
   textures.maxReflectionLod =
     static_cast<float>(settings.prefilterMipLevels > 0 ? settings.prefilterMipLevels - 1 : 0);
@@ -585,8 +612,13 @@ void BakeSpecularPrefilter(const wgpu::Device& device,
   uboDesc.size = sizeof(CaptureUniforms);
   wgpu::Buffer captureUbo = device.CreateBuffer(&uboDesc);
 
+  const auto tEnvMipsStart = std::chrono::steady_clock::now();
   GenerateEnvCubemapMips(device, queue, textures.envCubemap, textures.envCubemapView,
                          textures.linearClampSampler, captureUbo, projection, views, settings);
+  SyncIfTiming(syncInstance, queue, timingsOut);
+  if (timingsOut) {
+    timingsOut->envMipsMs = ElapsedMs(tEnvMipsStart);
+  }
 
   wgpu::TextureDescriptor prefilterDesc{};
   prefilterDesc.size = { settings.prefilterFaceSize, settings.prefilterFaceSize, 6 };
@@ -708,6 +740,7 @@ void BakeSpecularPrefilter(const wgpu::Device& device,
   const uint32_t mipLevels = settings.prefilterMipLevels;
   const float roughnessDenom = mipLevels > 1 ? static_cast<float>(mipLevels - 1) : 1.0f;
 
+  const auto tPrefilterStart = std::chrono::steady_clock::now();
   for (uint32_t mip = 0; mip < mipLevels; ++mip) {
     const float roughness = static_cast<float>(mip) / roughnessDenom;
     const uint32_t faceSize = settings.prefilterFaceSize >> mip;
@@ -726,14 +759,18 @@ void BakeSpecularPrefilter(const wgpu::Device& device,
                       face, mip, viewport);
     }
   }
+  SyncIfTiming(syncInstance, queue, timingsOut);
+  if (timingsOut) {
+    timingsOut->prefilterMs = ElapsedMs(tPrefilterStart);
+  }
 }
 
 void BakeBrdfLut(const wgpu::Device& device,
                  const wgpu::Queue& queue,
                  IblTextures& textures,
                  const IblBakeSettings& settings,
-                 IblBakeTimings* timingsOut) {
-  (void)timingsOut;
+                 IblBakeTimings* timingsOut,
+                 const wgpu::Instance* syncInstance) {
   // Create the BRDF LUT texture as RG32Float with storage + sampling usage.
   // Dawn does not allow RG16Float for storage textures on this backend.
   wgpu::TextureDescriptor lutDesc{};
@@ -811,6 +848,7 @@ void BakeBrdfLut(const wgpu::Device& device,
   wgpu::ComputePipeline pipeline = device.CreateComputePipeline(&pipeDesc);
 
   // Encode compute dispatch (512x512 with 16x16 workgroups).
+  const auto tBrdfStart = std::chrono::steady_clock::now();
   wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
   wgpu::ComputePassEncoder pass = encoder.BeginComputePass();
   pass.SetPipeline(pipeline);
@@ -819,6 +857,10 @@ void BakeBrdfLut(const wgpu::Device& device,
   pass.End();
 
   queue.Submit(1, &encoder.Finish());
+  SyncIfTiming(syncInstance, queue, timingsOut);
+  if (timingsOut) {
+    timingsOut->brdfMs = ElapsedMs(tBrdfStart);
+  }
 }
 
 } // namespace ibl

@@ -36,8 +36,11 @@ FetchContent_MakeAvailable(imgui)
 add_executable(Renderer
     main.cpp
     app/BakePipeline.cpp
+    app/EvaluationLog.cpp
     io/HdrLoader.cpp
     io/GltfLoader.cpp
+    io/Screenshot.cpp
+    utils/QueueSync.cpp
     ibl/IblBaker.cpp
     ibl/IblSettings.cpp
     gfx/PbrRenderer.cpp

@@ -43,6 +43,22 @@ hdrs/
 assets/*
 !assets/README.md
 
+# Evaluation outputs (keep results/README.md and .gitkeep)
+results/*
+!results/README.md
+!results/screenshots/
+results/screenshots/*
+!results/screenshots/.gitkeep
+
 # --- Optional local dependency trees (use system / FetchContent / DAWN_INSTALL_PREFIX) ---
 dawn/
 glm/
+
+# --- Report / Overleaf artifacts (not part of code repo) ---
+paper-content.tex
+report.tex
+references.bib
+eg-alpha-doi.bst
+latex/
+figures/
+docs/

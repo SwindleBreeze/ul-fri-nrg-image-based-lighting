@@ -9,6 +9,8 @@ struct GLFWwindow;
 
 namespace gfx {
 
+class OrbitCamera;
+
 class UiLayer {
 public:
   bool Init(const wgpu::Device& device,
@@ -18,7 +20,7 @@ public:
   void Shutdown();
 
   void BeginFrame();
-  void Build(app::AppState& state, scene::Scene& scene);
+  void Build(app::AppState& state, scene::Scene& scene, OrbitCamera& camera);
   void RenderDrawData(wgpu::RenderPassEncoder& pass);
 
   bool WantsCaptureMouse() const;

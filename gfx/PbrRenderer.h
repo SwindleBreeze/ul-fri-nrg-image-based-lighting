@@ -38,6 +38,10 @@ public:
               float envYawRadians,
               UiLayer* uiLayer = nullptr);
 
+  wgpu::TextureView GetScreenshotColorView() const { return screenshotColorView_; }
+  wgpu::Texture GetScreenshotColorTexture() const { return screenshotColor_; }
+  wgpu::TextureFormat GetColorFormat() const { return colorFormat_; }
+
   bool IsReady() const { return ready_; }
 
   scene::Scene* GetScene() { return scene_; }
@@ -82,6 +86,7 @@ private:
                                         const wgpu::Buffer& materialBuffer,
                                         const wgpu::Buffer& modelBuffer);
   void CreateDepthTexture();
+  void CreateScreenshotColorTexture();
   void CreateDefaultTextures(const wgpu::Instance& instance);
 
   wgpu::Device device_;
@@ -115,6 +120,10 @@ private:
 
   wgpu::Texture depthTexture_;
   wgpu::TextureView depthView_;
+
+  wgpu::TextureFormat colorFormat_ = wgpu::TextureFormat::BGRA8Unorm;
+  wgpu::Texture screenshotColor_;
+  wgpu::TextureView screenshotColorView_;
 
   wgpu::Buffer skyboxVertexBuffer_;
   wgpu::Buffer skyboxIndexBuffer_;

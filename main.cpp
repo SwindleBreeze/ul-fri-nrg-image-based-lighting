@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <system_error>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -33,11 +34,13 @@
 
 #include "app/AppState.h"
 #include "app/BakePipeline.h"
+#include "app/EvaluationLog.h"
 #include "gfx/OrbitCamera.h"
 #include "gfx/PbrRenderer.h"
 #include "gfx/UiLayer.h"
 #include "ibl/IblBaker.h"
 #include "io/HdrLoader.h"
+#include "io/Screenshot.h"
 #include "scene/Scene.h"
 
 struct GpuContext {
@@ -187,6 +190,17 @@ static SurfaceConfig ChooseSurfaceConfig(const wgpu::Surface& surface,
   return config;
 }
 
+static const char* QualityPresetSlug(ibl::IblQualityPreset preset) {
+  switch (preset) {
+    case ibl::IblQualityPreset::Low:
+      return "low";
+    case ibl::IblQualityPreset::High:
+      return "high";
+    default:
+      return "medium";
+  }
+}
+
 static void ConfigureSurface(const wgpu::Surface& surface,
                              const wgpu::Device& device,
                              const SurfaceConfig& surfaceConfig,
@@ -213,8 +227,17 @@ int main(int argc, char** argv) {
   std::string gltfPath;
   if (argc >= 3) {
     gltfPath = argv[2];
-  } else if (std::filesystem::exists("assets/DamagedHelmet.glb")) {
-    gltfPath = "assets/DamagedHelmet.glb";
+  } else {
+    const char* defaultModels[] = {
+      "glb/porsche.glb",
+      "../glb/porsche.glb",
+    };
+    for (const char* candidate : defaultModels) {
+      if (std::filesystem::exists(candidate)) {
+        gltfPath = candidate;
+        break;
+      }
+    }
   }
 
   GpuContext gpu{};
@@ -258,7 +281,8 @@ int main(int argc, char** argv) {
   app::AppState appState{};
   ibl::DestroyIblTextures(ibl::IblTextures{});
   ibl::IblTextures iblTextures = app::RunIblBake(gpu.instance, gpu.device, gpu.queue, hdrTexture,
-                                               appState.bakeSettings, appState.bakeTimings);
+                                                 appState.bakeSettings, appState.bakeTimings,
+                                                 appState.qualityPreset);
   if (!ibl::IblTexturesReady(iblTextures)) {
     Fatal("IBL bake finished but textures are missing.");
   }
@@ -284,6 +308,8 @@ int main(int argc, char** argv) {
 
   gfx::OrbitCamera camera;
   camera.Attach(window); // after ImGui init; forwards input to ImGui then orbit
+  camera.LoadEvaluationPose();
+  appState.envYawDegrees = 0.0f;
 
   std::vector<double> frameTimes;
   frameTimes.reserve(128);
@@ -299,9 +325,14 @@ int main(int argc, char** argv) {
       appState.rebakeRequested = false;
       ibl::DestroyIblTextures(iblTextures);
       iblTextures = app::RunIblBake(gpu.instance, gpu.device, gpu.queue, hdrTexture,
-                                    appState.bakeSettings, appState.bakeTimings);
+                                    appState.bakeSettings, appState.bakeTimings,
+                                    appState.qualityPreset);
       renderer.UpdateIblTextures(iblTextures);
       appState.rebaking = false;
+      frameTimes.clear();
+      appState.collectFpsSample = true;
+      appState.fpsSamplePreset = appState.qualityPreset;
+      appState.fpsLoggedSinceRebake = false;
     }
 
     int fbWidth = 0;
@@ -323,7 +354,7 @@ int main(int argc, char** argv) {
     const auto frameStart = std::chrono::steady_clock::now();
 
     ui.BeginFrame();
-    ui.Build(appState, scene);
+    ui.Build(appState, scene, camera);
 
     wgpu::SurfaceTexture surfaceTexture{};
     surface.GetCurrentTexture(&surfaceTexture);
@@ -343,6 +374,39 @@ int main(int argc, char** argv) {
     wgpu::TextureView colorView = surfaceTexture.texture.CreateView();
     const float aspect = static_cast<float>(currentWidth) / static_cast<float>(currentHeight);
     const float envYaw = glm::radians(appState.envYawDegrees);
+
+    if (appState.screenshotRequested) {
+      appState.screenshotRequested = false;
+      const char* slug = QualityPresetSlug(appState.qualityPreset);
+      const std::string slugPath = std::string("results/screenshots/") + slug + ".png";
+      std::string canonicalPath = slugPath;
+      if (appState.qualityPreset == ibl::IblQualityPreset::High) {
+        canonicalPath = "results/screenshots/reference_high.png";
+      } else if (appState.qualityPreset == ibl::IblQualityPreset::Low) {
+        canonicalPath = "results/screenshots/test_low.png";
+      } else if (appState.qualityPreset == ibl::IblQualityPreset::Medium) {
+        canonicalPath = "results/screenshots/test_medium.png";
+      }
+
+      // Scene-only render target (CopySrc). Swapchain textures cannot be copied.
+      renderer.Render(renderer.GetScreenshotColorView(), camera.GetPosition(),
+                      camera.GetViewMatrix(), camera.GetProjection(aspect), envYaw, nullptr);
+      app::WaitForQueue(gpu.instance, gpu.queue);
+      gpu.instance.ProcessEvents();
+
+      const bool ok = io::SaveTextureToPng(
+        gpu.instance, gpu.device, gpu.queue, renderer.GetScreenshotColorTexture(),
+        renderer.GetColorFormat(), currentWidth, currentHeight, canonicalPath);
+      if (ok) {
+        std::error_code ec;
+        std::filesystem::copy_file(canonicalPath, slugPath,
+                                   std::filesystem::copy_options::overwrite_existing, ec);
+        appState.lastScreenshotPath =
+          std::filesystem::absolute(canonicalPath).string();
+        app::LogRuntimeFps(appState.qualityPreset, appState.fpsAvg, appState.fpsMin,
+                           currentWidth, currentHeight, "screenshot");
+      }
+    }
 
     renderer.Render(colorView, camera.GetPosition(), camera.GetViewMatrix(),
                     camera.GetProjection(aspect), envYaw, &ui);
@@ -365,6 +429,15 @@ int main(int argc, char** argv) {
     }
     appState.fpsAvg = static_cast<float>(1000.0 / (sum / frameTimes.size()));
     appState.fpsMin = static_cast<float>(1000.0 / minMs);
+
+    constexpr size_t kFpsSampleFrames = 120;
+    if (appState.collectFpsSample && !appState.fpsLoggedSinceRebake &&
+        frameTimes.size() >= kFpsSampleFrames) {
+      app::LogRuntimeFps(appState.fpsSamplePreset, appState.fpsAvg, appState.fpsMin,
+                         currentWidth, currentHeight, "auto_after_rebake_or_preset");
+      appState.fpsLoggedSinceRebake = true;
+      appState.collectFpsSample = false;
+    }
   }
 
   ui.Shutdown();

@@ -14,6 +14,7 @@ ibl::IblTextures RunIblBake(const wgpu::Instance& instance,
                             const wgpu::Queue& queue,
                             const io::HdrTexture& hdr,
                             const ibl::IblBakeSettings& settings,
-                            ibl::IblBakeTimings& timingsOut);
+                            ibl::IblBakeTimings& timingsOut,
+                            ibl::IblQualityPreset presetForLog = ibl::IblQualityPreset::Medium);
 
 } // namespace app

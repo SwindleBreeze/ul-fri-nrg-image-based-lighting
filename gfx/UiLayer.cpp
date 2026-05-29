@@ -5,6 +5,8 @@
 #include <imgui_impl_wgpu.h>
 
 #include <algorithm>
+
+#include "gfx/OrbitCamera.h"
 #include "ibl/IblBaker.h"
 
 namespace gfx {
@@ -60,7 +62,7 @@ void UiLayer::BeginFrame() {
   ImGui::NewFrame();
 }
 
-void UiLayer::Build(app::AppState& state, scene::Scene& scene) {
+void UiLayer::Build(app::AppState& state, scene::Scene& scene, OrbitCamera& camera) {
   if (!initialized_) {
     return;
   }
@@ -85,6 +87,7 @@ void UiLayer::Build(app::AppState& state, scene::Scene& scene) {
     presetIndex = 2;
   }
   if (ImGui::Combo("Preset", &presetIndex, presets, 3)) {
+    const ibl::IblQualityPreset previous = state.qualityPreset;
     switch (presetIndex) {
       case 0:
         state.qualityPreset = ibl::IblQualityPreset::Low;
@@ -97,6 +100,11 @@ void UiLayer::Build(app::AppState& state, scene::Scene& scene) {
         break;
     }
     state.bakeSettings = ibl::SettingsForPreset(state.qualityPreset);
+    if (state.qualityPreset != previous) {
+      state.collectFpsSample = true;
+      state.fpsSamplePreset = state.qualityPreset;
+      state.fpsLoggedSinceRebake = false;
+    }
   }
   if (ImGui::Button("Rebake IBL") || ImGui::IsKeyPressed(ImGuiKey_R)) {
     state.rebakeRequested = true;
@@ -104,6 +112,21 @@ void UiLayer::Build(app::AppState& state, scene::Scene& scene) {
 
   ImGui::Separator();
   ImGui::SliderFloat("Env yaw (deg)", &state.envYawDegrees, -180.0f, 180.0f);
+
+  ImGui::Separator();
+  ImGui::TextUnformatted("Evaluation capture");
+  const OrbitCameraPose pose = camera.GetPose();
+  ImGui::Text("Camera: dist %.2f  yaw %.2f  pitch %.2f", pose.distance, pose.yaw, pose.pitch);
+  if (ImGui::Button("Load evaluation pose") || ImGui::IsKeyPressed(ImGuiKey_E)) {
+    camera.LoadEvaluationPose();
+    state.envYawDegrees = 0.0f;
+  }
+  if (ImGui::Button("Save screenshot") || ImGui::IsKeyPressed(ImGuiKey_P)) {
+    state.screenshotRequested = true;
+  }
+  if (!state.lastScreenshotPath.empty()) {
+    ImGui::TextWrapped("Last: %s", state.lastScreenshotPath.c_str());
+  }
 
   ImGui::Separator();
   ImGui::TextUnformatted("Selected object");

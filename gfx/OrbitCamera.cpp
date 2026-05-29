@@ -78,6 +78,30 @@ glm::mat4 OrbitCamera::GetProjection(float aspect) const {
   return proj;
 }
 
+OrbitCameraPose OrbitCamera::GetPose() const {
+  OrbitCameraPose pose;
+  pose.target = target_;
+  pose.distance = distance_;
+  pose.yaw = yaw_;
+  pose.pitch = pitch_;
+  return pose;
+}
+
+void OrbitCamera::SetPose(const OrbitCameraPose& pose) {
+  target_ = pose.target;
+  distance_ = std::clamp(pose.distance, kMinDistance, kMaxDistance);
+  yaw_ = pose.yaw;
+  pitch_ = std::clamp(pose.pitch, -kMaxPitch, kMaxPitch);
+}
+
+OrbitCameraPose OrbitCamera::DefaultEvaluationPose() {
+  return OrbitCameraPose{};
+}
+
+void OrbitCamera::LoadEvaluationPose() {
+  SetPose(DefaultEvaluationPose());
+}
+
 void OrbitCamera::OnMouseButton(int button, int action) {
   if (ImGui::GetIO().WantCaptureMouse) {
     dragging_ = false;

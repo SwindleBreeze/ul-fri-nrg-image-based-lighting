@@ -50,22 +50,26 @@ void DestroyIblTextures(IblTextures& textures);
 
 bool IblTexturesReady(const IblTextures& textures);
 
+// When timingsOut is non-null, syncInstance must be set so GPU work is included in timings.
 IblTextures BakeDiffuseIrradiance(const wgpu::Device& device,
                                   const wgpu::Queue& queue,
                                   const io::HdrTexture& hdr,
                                   const IblBakeSettings& settings,
-                                  IblBakeTimings* timingsOut = nullptr);
+                                  IblBakeTimings* timingsOut = nullptr,
+                                  const wgpu::Instance* syncInstance = nullptr);
 
 void BakeSpecularPrefilter(const wgpu::Device& device,
                            const wgpu::Queue& queue,
                            IblTextures& textures,
                            const IblBakeSettings& settings,
-                           IblBakeTimings* timingsOut = nullptr);
+                           IblBakeTimings* timingsOut = nullptr,
+                           const wgpu::Instance* syncInstance = nullptr);
 
 void BakeBrdfLut(const wgpu::Device& device,
                  const wgpu::Queue& queue,
                  IblTextures& textures,
                  const IblBakeSettings& settings,
-                 IblBakeTimings* timingsOut = nullptr);
+                 IblBakeTimings* timingsOut = nullptr,
+                 const wgpu::Instance* syncInstance = nullptr);
 
 } // namespace ibl

@@ -147,6 +147,7 @@ void PbrRenderer::Initialize(const wgpu::Instance& instance,
   ready_ = false;
   device_ = device;
   queue_ = queue;
+  colorFormat_ = colorFormat;
   iblTextures_ = iblTextures;
   maxReflectionLod_ = iblTextures.maxReflectionLod;
 
@@ -534,6 +535,7 @@ void PbrRenderer::Resize(uint32_t width, uint32_t height) {
   width_ = width;
   height_ = height;
   CreateDepthTexture();
+  CreateScreenshotColorTexture();
 }
 
 void PbrRenderer::CreateDepthTexture() {
@@ -543,6 +545,19 @@ void PbrRenderer::CreateDepthTexture() {
   depthDesc.usage = wgpu::TextureUsage::RenderAttachment;
   depthTexture_ = device_.CreateTexture(&depthDesc);
   depthView_ = depthTexture_.CreateView();
+}
+
+void PbrRenderer::CreateScreenshotColorTexture() {
+  if (!device_ || width_ == 0 || height_ == 0) {
+    return;
+  }
+
+  wgpu::TextureDescriptor desc{};
+  desc.size = { width_, height_, 1 };
+  desc.format = colorFormat_;
+  desc.usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopySrc;
+  screenshotColor_ = device_.CreateTexture(&desc);
+  screenshotColorView_ = screenshotColor_.CreateView();
 }
 
 void PbrRenderer::Render(const wgpu::TextureView& colorView,
